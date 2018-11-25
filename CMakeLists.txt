@@ -14,7 +14,7 @@ configure_file(
 
 find_package(Threads REQUIRED)
 
-add_subdirectory(modules/libr3)
+add_subdirectory(modules/libr3 EXCLUDE_FROM_ALL)
 
 if (NOT EXTERNAL_CRYPTONODE)
   set(GRAFT_BINARY_DIR "${PROJECT_BINARY_DIR}")
@@ -123,6 +123,7 @@ add_executable(graft_server
     ${PROJECT_SOURCE_DIR}/src/server.cpp
     ${PROJECT_SOURCE_DIR}/src/main.cpp
     )
+install(TARGETS graft_server DESTINATION bin)
 
 
 target_include_directories(graft_server PRIVATE
@@ -154,7 +155,7 @@ set_target_properties(graft_server PROPERTIES LINK_FLAGS "-rdynamic")
 ### tests section
 if (OPT_BUILD_TESTS)
         message("==> Build tests section included")
-        add_subdirectory(modules/googletest)
+        add_subdirectory(modules/googletest EXCLUDE_FROM_ALL)
 
         add_executable(graft_server_test
                 ${GS_SOURCES}
