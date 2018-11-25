@@ -5,57 +5,21 @@ project(graft_server)
 option(OPT_BUILD_TESTS "Build tests." OFF)
 option(ENABLE_SYSLOG "SYSLOG support. It can be compiled for UNIX-like platforms only." OFF)
 
+set(EXTERNAL_CRYPTONODE OFF CACHE BINARY "Disables building the embedded GraftNetwork project; advanced usage only.  include/library directories to an existing build must be properly specified.")
+
 configure_file(
     "${PROJECT_SOURCE_DIR}/CMakeConfig.h.in"
     "${PROJECT_BINARY_DIR}/CMakeConfig.h"
     )
 
-if(NOT DEFINED CMAKE_ROOT_SOURCE_DIR)
-    # CMAKE_ROOT_SOURCE_DIR variable is required, because CMAKE_SOURCE_DIR works well for include like commands and does not for external projects
-    set(CMAKE_ROOT_SOURCE_DIR "${CMAKE_SOURCE_DIR}")
-endif()
-
 find_package(Threads REQUIRED)
 
-include(ExternalProject)
+add_subdirectory(modules/libr3)
 
-set(ExternalProjectCMakeArgs
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR}/BUILD
-    )
-
-ExternalProject_Add(
-    libr3
-    DOWNLOAD_COMMAND ""
-    DOWNLOAD_DIR ${PROJECT_SOURCE_DIR}
-    SOURCE_DIR ${PROJECT_SOURCE_DIR}/modules/libr3
-    BINARY_DIR ${PROJECT_BINARY_DIR}/BUILD/libr3
-    STAMP_DIR ${PROJECT_BINARY_DIR}/STAMP/libr3
-    TMP_DIR ${PROJECT_BINARY_DIR}/TMP/libr3
-    INSTALL_DIR ${PROJECT_BINARY_DIR}/BUILD/lib
-    CMAKE_ARGS ${ExternalProjectCMakeArgs}
-    )
-
-# copy liblib3rdparty.a to BUILD/lib/ directory
-add_custom_command(
-    TARGET libr3
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-    ${PROJECT_BINARY_DIR}/BUILD/libr3/3rdparty/liblib3rdparty.a
-    ${PROJECT_BINARY_DIR}/BUILD/lib/
-    )
-
-ExternalProject_Add(
-    cryptonode
-    DOWNLOAD_COMMAND ""
-    DOWNLOAD_DIR ${PROJECT_SOURCE_DIR}
-    SOURCE_DIR ${PROJECT_SOURCE_DIR}/modules/cryptonode
-    BINARY_DIR ${PROJECT_BINARY_DIR}/BUILD/cryptonode
-    STAMP_DIR ${PROJECT_BINARY_DIR}/STAMP/cryptonode
-    TMP_DIR ${PROJECT_BINARY_DIR}/TMP/cryptonode
-    INSTALL_DIR ${PROJECT_BINARY_DIR}/BUILD
-    CMAKE_ARGS ${ExternalProjectCMakeArgs} -DSTATIC=ON -DHAVE_EVP_MD_CTX_NEW=YES -DENABLE_SYSLOG=${ENABLE_SYSLOG} -DCMAKE_ROOT_SOURCE_DIR="\"${CMAKE_ROOT_SOURCE_DIR}\""
-    )
+if (NOT EXTERNAL_CRYPTONODE)
+  set(GRAFT_BINARY_DIR "${PROJECT_BINARY_DIR}")
+  add_subdirectory(modules/cryptonode)
+endif()
 
 set(CMAKE_CXX_STANDARD 14)
 
@@ -103,34 +67,21 @@ set(GS_INCLUDE_DIRS
     )
 
 set(GS_LIBS
-    ${PROJECT_BINARY_DIR}/BUILD/lib/libr3.a
-    ${PROJECT_BINARY_DIR}/BUILD/lib/liblib3rdparty.a
+    r3
+    lib3rdparty
     pcre
     dl
     )
 
 
-set(CRYPTONODE_INCLUDE_DIRS
+if(NOT EXTERNAL_CRYPTONODE)
+  set(CRYPTONODE_INCLUDE_DIRS
     ${PROJECT_SOURCE_DIR}/modules/cryptonode/contrib/epee/include
     ${PROJECT_SOURCE_DIR}/modules/cryptonode/external/easylogging++
     ${PROJECT_SOURCE_DIR}/modules/cryptonode/external
     ${PROJECT_SOURCE_DIR}/modules/cryptonode/src
     )
-
-set(CRYPTONODE_LIB_DIRS
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/contrib/epee/src
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/external/easylogging++
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/external/unbound
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/lib
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/common
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/crypto
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/cryptonote_basic
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/cryptonote_core
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/mnemonics
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/ringct
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/wallet
-    ${PROJECT_BINARY_DIR}/BUILD/cryptonode/src/utils
-    )
+endif()
 
 set(CRYPTONODE_LIBS
     easylogging
@@ -165,10 +116,7 @@ elseif(Boost_FOUND)
 endif()
 
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
-# cryptonode dependencies
-# TODO: modify cryptonode CMakeLists.txt so it installs all required headers/libs
 include_directories(${CRYPTONODE_INCLUDE_DIRS})
-link_directories(${CRYPTONODE_LIB_DIRS})
 
 add_executable(graft_server
     ${GS_SOURCES}
@@ -202,31 +150,11 @@ endif()
 
 set_target_properties(graft_server PROPERTIES LINK_FLAGS "-rdynamic")
 
-add_dependencies(graft_server libr3 cryptonode)
-
 ##################
 ### tests section
 if (OPT_BUILD_TESTS)
         message("==> Build tests section included")
-        ExternalProject_Add(
-            googletest
-            DOWNLOAD_COMMAND ""
-            DOWNLOAD_DIR ${PROJECT_SOURCE_DIR}
-            SOURCE_DIR ${PROJECT_SOURCE_DIR}/modules/googletest
-            BINARY_DIR ${PROJECT_BINARY_DIR}/BUILD/googletest
-            STAMP_DIR ${PROJECT_BINARY_DIR}/STAMP/googletest
-            TMP_DIR ${PROJECT_BINARY_DIR}/TMP/googletest
-            INSTALL_DIR ${PROJECT_BINARY_DIR}/BUILD/googletest
-            INSTALL_COMMAND ""
-            )
-
-        ExternalProject_Get_Property(googletest SOURCE_DIR)
-        set(GT_INCLUDE_DIRS ${SOURCE_DIR}/googletest/include)
-
-        ExternalProject_Get_Property(googletest BINARY_DIR)
-        set(GT_LIBS
-            ${BINARY_DIR}/googlemock/gtest/${CMAKE_FIND_LIBRARY_PREFIXES}gtest.a
-            )
+        add_subdirectory(modules/googletest)
 
         add_executable(graft_server_test
                 ${GS_SOURCES}
@@ -240,15 +168,14 @@ if (OPT_BUILD_TESTS)
 
         target_include_directories(graft_server_test PRIVATE
                 ${GS_INCLUDE_DIRS}
-                ${GT_INCLUDE_DIRS}
+                ${googletest_SOURCE_DIR}/include
                 ${CRYPTONODE_INCLUDES}
-
         )
 
         target_link_libraries(graft_server_test
             PRIVATE
             ${CRYPTONODE_LIBS}
-            ${GT_LIBS}
+            gtest
             ${GS_LIBS}
             ${Boost_LIBRARIES}
             ${CMAKE_THREAD_LIBS_INIT}
@@ -261,23 +188,9 @@ if (OPT_BUILD_TESTS)
             target_compile_definitions(graft_server_test PRIVATE -DELPP_SYSLOG)
         endif()
 
-        add_dependencies(graft_server_test libr3 cryptonode googletest)
-
-        if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/test_wallet.keys)
-            add_custom_command(
-                TARGET graft_server POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy
-                ${CMAKE_SOURCE_DIR}/data/test_wallet.keys
-                ${CMAKE_CURRENT_BINARY_DIR}/test_wallet.keys)
-        endif()
+        file(COPY data/ DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 endif (OPT_BUILD_TESTS)
 
 # copy config file to build directory
-if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/config.ini)
-    add_custom_command(
-        TARGET graft_server POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_SOURCE_DIR}/data/*
-        ${CMAKE_CURRENT_BINARY_DIR}/)
-endif()
+file(INSTALL data/config.ini DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
