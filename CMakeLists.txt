@@ -118,19 +118,8 @@ endif()
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 include_directories(${CRYPTONODE_INCLUDE_DIRS})
 
-add_executable(graft_server
-    ${GS_SOURCES}
-    ${PROJECT_SOURCE_DIR}/src/server.cpp
-    ${PROJECT_SOURCE_DIR}/src/main.cpp
-    )
-install(TARGETS graft_server DESTINATION bin)
-
-
-target_include_directories(graft_server PRIVATE
-    ${GS_INCLUDE_DIRS}
-    )
-
-target_link_libraries(graft_server PRIVATE
+add_library(graftserver STATIC ${GS_SOURCES})
+target_link_libraries(graftserver PRIVATE
     ${CRYPTONODE_LIBS}
     ${GS_LIBS}
     ${CMAKE_THREAD_LIBS_INIT}
@@ -144,12 +133,24 @@ target_link_libraries(graft_server PRIVATE
     ${COMMON_LIBS}
     )
 
-target_compile_definitions(graft_server PRIVATE MG_ENABLE_COAP=1 -DMONERO_DEFAULT_LOG_CATEGORY="supernode")
+target_include_directories(graftserver PRIVATE
+    ${GS_INCLUDE_DIRS}
+    )
+
+target_compile_definitions(graftserver PRIVATE MG_ENABLE_COAP=1 -DMONERO_DEFAULT_LOG_CATEGORY="supernode")
 if(ENABLE_SYSLOG)
-    target_compile_definitions(graft_server PRIVATE -DELPP_SYSLOG)
+    target_compile_definitions(graftserver PRIVATE -DELPP_SYSLOG)
 endif()
 
+add_executable(graft_server
+    ${PROJECT_SOURCE_DIR}/src/server.cpp
+    ${PROJECT_SOURCE_DIR}/src/main.cpp
+    )
+install(TARGETS graft_server DESTINATION bin)
+target_link_libraries(graft_server PRIVATE graftserver)
+target_include_directories(graft_server PRIVATE ${GS_INCLUDE_DIRS})
 set_target_properties(graft_server PROPERTIES LINK_FLAGS "-rdynamic")
+
 
 ##################
 ### tests section
@@ -158,7 +159,6 @@ if (OPT_BUILD_TESTS)
         add_subdirectory(modules/googletest EXCLUDE_FROM_ALL)
 
         add_executable(graft_server_test
-                ${GS_SOURCES}
                 ${PROJECT_SOURCE_DIR}/test/graft_server_test.cpp
                 ${PROJECT_SOURCE_DIR}/test/json_rpc_test.cpp
                 ${PROJECT_SOURCE_DIR}/test/json_test.cpp
@@ -175,19 +175,13 @@ if (OPT_BUILD_TESTS)
 
         target_link_libraries(graft_server_test
             PRIVATE
-            ${CRYPTONODE_LIBS}
+            graftserver
             gtest
-            ${GS_LIBS}
-            ${Boost_LIBRARIES}
-            ${CMAKE_THREAD_LIBS_INIT}
-            ${COMMON_LIBS}
             )
 
 
-        target_compile_definitions(graft_server_test PRIVATE MG_ENABLE_COAP=1)
-        if(ENABLE_SYSLOG)
-            target_compile_definitions(graft_server_test PRIVATE -DELPP_SYSLOG)
-        endif()
+        get_target_property(GRAFT_SERVER_DEFINITIONS graft_server COMPILE_DEFINITIONS)
+        target_compile_definitions(graft_server_test PRIVATE ${GRAFT_SERVER_DEFINITIONS})
 
         file(COPY data/ DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
