@@ -1,0 +1,2 @@
+usr/bin/graft_server
+data/config.ini /usr/share/doc/graft-supernode
